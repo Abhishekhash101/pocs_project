@@ -9,8 +9,6 @@ import io
 # Imports for added features
 from streamlit_drawable_canvas import st_canvas
 from skimage.metrics import structural_similarity as ssim
-from streamlit_mic_recorder import mic_recorder
-from pydub import AudioSegment
 import numexpr as ne
 
 st.set_page_config(page_title="Advanced Modulation Simulator", layout="wide")
@@ -162,7 +160,7 @@ def fm_modulate(msg, fc, fs, kf=5.0):
 
 st.title("📡 Real-Time Interactive Modulation Simulator")
 
-input_type = st.radio("Select Input Type", ["Audio", "Image", "Draw Signal", "Live Audio", "Live Camera", "Equation"])
+input_type = st.radio("Select Input Type", ["Audio", "Image", "Draw Signal", "Live Camera", "Equation"])
 uploaded_file = st.file_uploader("Upload Audio/Image File", type=["wav", "mp3", "jpg", "png"])
 
 modulations = st.multiselect("Select Modulations", ['AM', 'DSB-SC', 'SSB', 'FM'])
@@ -175,25 +173,7 @@ original_image_shape = None
 msg_for_metrics = None
 
 # --- Input Handling ---
-if input_type == "Live Audio":
-    st.subheader("🎤 Record Your Voice")
-    audio_info = mic_recorder(start_prompt="▶️ Start Recording", stop_prompt="⏹️ Stop Recording", key='recorder')
-    if audio_info:
-        audio_bytes = audio_info['bytes']
-        st.audio(audio_bytes)
-        try:
-            audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
-            wav_buffer = io.BytesIO()
-            audio_segment.export(wav_buffer, format="wav")
-            wav_buffer.seek(0)
-            data, samplerate = sf.read(wav_buffer)
-            if data.ndim > 1: data = data.mean(axis=1)
-            if samplerate != fs: data = resample(data, int(len(data) * fs / samplerate))
-            if np.max(np.abs(data)) > 0: msg_flat = data / np.max(np.abs(data))
-        except Exception as e:
-            st.error(f"Could not process audio. Make sure FFmpeg is installed. Error: {e}")
-
-elif input_type == "Live Camera":
+if input_type == "Live Camera":
     st.subheader("📸 Capture from Webcam")
     camera_photo = st.camera_input("Take a picture")
     if camera_photo:
@@ -233,9 +213,8 @@ elif input_type == "Draw Signal":
             st.session_state.drawn_signal = msg_flat
             st.success("Drawing processed successfully!")
 
-    if 'drawn_signal' in st.session_state:
+    if 'drawn_signal' in st.session_state and input_type == "Draw Signal":
         msg_flat = st.session_state.drawn_signal
-        
         st.subheader("Your Processed Waveform")
         fig, ax = plt.subplots(figsize=(12, 3))
         ax.plot(msg_flat, color='blue')
@@ -245,31 +224,57 @@ elif input_type == "Draw Signal":
 
 elif input_type == "Equation":
     st.subheader("🧪 Define Signal with an Equation")
-    st.info("Define `m(t)` using NumPy. Use `t` for time. Examples: `np.sin(2*np.pi*100*t)`, `np.sign(np.sin(2*np.pi*10*t))`")
-    if 'equation_str' not in st.session_state:
-        st.session_state.equation_str = "np.sin(2 * np.pi * 100 * t)"
-    equation_str = st.text_input("Enter your equation:", st.session_state.equation_str)
-    st.session_state.equation_str = equation_str
-    duration = st.number_input("Signal Duration (s)", 0.1, 10.0, 1.0, 0.1)
+    eq_type = st.selectbox("Select Generator Type", ["Sine Wave Parameters", "Freeform Equation"])
 
-    if st.button("Generate Signal", key="generate_signal"):
-        try:
+    if eq_type == "Sine Wave Parameters":
+        st.info("Generate a signal using the formula:  $x(t) = A \\sin(2\\pi f t + \\phi)$")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            amplitude = st.slider("Amplitude (A)", 0.0, 1.0, 1.0, 0.05)
+        with col2:
+            frequency = st.number_input("Frequency (f) in Hz", 1, 10000, 100)
+        with col3:
+            phase = st.slider("Phase (ϕ) in Degrees", -180, 180, 0)
+        duration = st.number_input("Signal Duration (s)", 0.1, 10.0, 1.0, 0.1, key="sine_duration")
+
+        if st.button("Generate Sine Wave", key="generate_sine"):
             N = int(duration * fs)
             t = np.arange(N) / fs
-            generated_signal = ne.evaluate(equation_str, local_dict={'np': np, 't': t})
-            if not isinstance(generated_signal, np.ndarray):
-                st.error("Equation did not produce a valid signal. Please check the expression.")
-            else:
-                if np.max(np.abs(generated_signal)) > 0:
-                    msg_flat = generated_signal / np.max(np.abs(generated_signal))
-                else:
-                    msg_flat = generated_signal
-                st.session_state.equation_signal = msg_flat
-                st.success("Signal generated successfully!")
-        except Exception as e:
-            st.error(f"Invalid equation or syntax error: {e}")
+            phase_rad = np.deg2rad(phase)
+            generated_signal = amplitude * np.sin(2 * np.pi * frequency * t + phase_rad)
+            msg_flat = generated_signal
+            st.session_state.equation_signal = msg_flat
+            st.success("Sine wave generated successfully!")
 
-    if 'equation_signal' in st.session_state:
+    elif eq_type == "Freeform Equation":
+        st.info("Define `m(t)` using NumPy-like functions. Use `t` for time.\n**Examples:** `sin(2*pi*100*t)`, `sign(sin(2*pi*10*t))`")
+        if 'equation_str' not in st.session_state:
+            st.session_state.equation_str = "sin(2 * pi * 100 * t)"
+        equation_str = st.text_input("Enter your equation:", st.session_state.equation_str)
+        st.session_state.equation_str = equation_str
+        duration = st.number_input("Signal Duration (s)", 0.1, 10.0, 1.0, 0.1, key="freeform_duration")
+
+        if st.button("Generate Signal from Equation", key="generate_freeform"):
+            try:
+                N = int(duration * fs)
+                t = np.arange(N) / fs
+                sanitized_equation = equation_str.replace("np.", "")
+                context_dict = {'np': np, 't': t, 'pi': np.pi}
+                generated_signal = ne.evaluate(sanitized_equation, local_dict=context_dict)
+                
+                if not isinstance(generated_signal, np.ndarray):
+                    st.error("Equation did not produce a valid signal.")
+                else:
+                    if np.max(np.abs(generated_signal)) > 0:
+                        msg_flat = generated_signal / np.max(np.abs(generated_signal))
+                    else:
+                        msg_flat = generated_signal
+                    st.session_state.equation_signal = msg_flat
+                    st.success("Signal generated successfully!")
+            except Exception as e:
+                st.error(f"Invalid equation or syntax error: {e}")
+
+    if 'equation_signal' in st.session_state and input_type == "Equation":
         msg_flat = st.session_state.equation_signal
         st.subheader("Generated Waveform")
         fig, ax = plt.subplots(figsize=(12, 3))
@@ -338,7 +343,7 @@ if msg_flat is not None and modulations:
             if ssim_val is not None:
                 cols[3].metric("SSIM", f"{ssim_val:.4f}")
             
-            if input_type in ["Audio", "Live Audio"]:
+            if input_type == "Audio":
                 st.audio(array_to_audio_bytes(rec, fs))
             elif input_type in ["Image", "Live Camera"] and original_image_shape:
                 st.image(recover_image(rec, original_image_shape), caption=f"{mod} Recovered Image")
