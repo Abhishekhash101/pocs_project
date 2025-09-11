@@ -205,24 +205,37 @@ elif input_type == "Live Camera":
 elif input_type == "Draw Signal":
     st.subheader("✍️ Draw Your Custom Waveform")
     st.info("Draw a single, continuous line from left to right. Then click the button below to process it.")
-    canvas_result = st_canvas(stroke_width=5, stroke_color="#000000", background_color="#EEEEEE", height=200, width=700, drawing_mode="freedraw", key="canvas")
+    canvas_result = st_canvas(
+        stroke_width=5, 
+        stroke_color="#000000",
+        background_color="#EEEEEE",
+        height=200,
+        width=700,
+        drawing_mode="freedraw",
+        key="canvas",
+    )
 
     if st.button("Process Drawing", key="process_drawing"):
-        if canvas_result.image_data is not None and np.sum(canvas_result.image_data[:, :, 3]) > 0:
-            drawn_image = canvas_result.image_data.astype(np.float32)[:, :, 3]
-            height, width = drawn_image.shape
-            raw_signal = np.array([np.sum(drawn_image[:, x] * np.arange(height)) / np.sum(drawn_image[:, x]) if np.sum(drawn_image[:, x]) > 0 else height / 2.0 for x in range(width)])
+        if canvas_result.image_data is not None and np.sum(canvas_result.image_data) > 0:
+            # Corrected Logic: Use a color channel (Red at index 0) and invert it.
+            gray_image = 255 - canvas_result.image_data.astype(np.float32)[:, :, 0]
+            
+            height, width = gray_image.shape
+            raw_signal = np.array([np.sum(gray_image[:, x] * np.arange(height)) / np.sum(gray_image[:, x]) if np.sum(gray_image[:, x]) > 0 else height / 2.0 for x in range(width)])
             raw_signal = height - raw_signal
+            
             if np.max(raw_signal) != np.min(raw_signal):
                 signal_centered = raw_signal - np.mean(raw_signal)
                 msg_flat = signal_centered / np.max(np.abs(signal_centered))
             else:
                 msg_flat = np.zeros_like(raw_signal)
+            
             st.session_state.drawn_signal = msg_flat
             st.success("Drawing processed successfully!")
 
     if 'drawn_signal' in st.session_state:
         msg_flat = st.session_state.drawn_signal
+        
         st.subheader("Your Processed Waveform")
         fig, ax = plt.subplots(figsize=(12, 3))
         ax.plot(msg_flat, color='blue')
