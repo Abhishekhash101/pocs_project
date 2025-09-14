@@ -189,6 +189,17 @@ with st.sidebar:
     else:
         st.caption("Coherent demodulator settings will appear here if DSB-SC or SSB are selected.")
 
+    st.divider()
+    st.subheader("***App Creators***")
+    st.markdown("""
+    Abhishek Kumar -	24BIT0104
+Khushvendra Singh -	24BIT0093 ,
+Aditya Raj - 24BIT0087 , 
+ Madhur Deshmukh -	24BIT0113 , 
+Manav mishra -	24BIT0100 ,
+Sarthak Agarwal -	24BIT0116
+    """)
+
 # --- Main Panel for Display and Processing ---
 msg_flat = None
 original_image_shape = None
@@ -262,7 +273,7 @@ elif uploaded_file is not None:
         original_image_shape = shape
         st.subheader("Original Image")
         # --- THIS IS THE CORRECTED LINE ---
-        st.image(recover_image(msg_flat, shape), use_container_width=True)
+        st.image(recover_image(msg_flat, shape), width='stretch')
 
 if msg_flat is not None:
     st.subheader("Original Message Signal `m(t)`")
