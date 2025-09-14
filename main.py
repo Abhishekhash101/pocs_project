@@ -162,15 +162,15 @@ with st.sidebar:
             duration_ff = st.number_input("Signal Duration (s)", 0.1, 10.0, 1.0, 0.1, key="freeform_duration")
             generate_freeform_button = st.button("Generate from Equation", key="generate_freeform_sidebar")
 
-    st.header("🔬 Simulation Parameters")
+    st.header("Simulation Parameters")
     modulations = st.multiselect("2. Select Modulations", ['AM', 'DSB-SC', 'SSB', 'FM'])
     carrier = st.number_input("Carrier Frequency (Hz)", value=5000, min_value=1)
     fs = st.number_input("Sampling Frequency (Hz)", value=48000, min_value=1)
 
-    st.header("🛰️ Channel Effects")
+    st.header("Channel Effects")
     snr_db = st.slider("Signal-to-Noise Ratio (SNR in dB)", -10, 40, 20)
     
-    st.header("🔧 Modulation & Demodulation Settings")
+    st.header("Modulation & Demodulation Settings")
     
     am_depth = 0.7 # Default value
     if 'AM' in modulations:
@@ -326,3 +326,4 @@ if msg_flat is not None and modulations:
 
 else:
     st.info("**Welcome!** Please select an input type and simulation parameters from the sidebar to begin.")
+
