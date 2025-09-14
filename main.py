@@ -172,11 +172,11 @@ with st.sidebar:
     
     st.header("Modulation & Demodulation Settings")
     
-    am_depth = 0.7 # Default value
+    am_depth = 0.7
     if 'AM' in modulations:
         am_depth = st.slider("AM Modulation Depth", 0.1, 2.0, 0.7, 0.05, help="Values > 1.0 will cause overmodulation.")
 
-    ssb_side = 'usb' # Default value
+    ssb_side = 'usb'
     if 'SSB' in modulations:
         ssb_side_choice = st.radio("SSB Sideband", ('USB', 'LSB'), key='ssb_side')
         ssb_side = ssb_side_choice.lower()
@@ -209,34 +209,35 @@ if input_type == "Live Camera":
     st.subheader("Capture from Webcam")
     camera_photo = st.camera_input("Take a picture")
     if camera_photo:
-        msg, shape = load_image(camera_photo)
-        msg_flat = msg.flatten()
-        original_image_shape = shape
-        st.image(camera_photo, caption="Captured Image")
+        try:
+            msg, shape = load_image(camera_photo)
+            msg_flat = msg.flatten()
+            original_image_shape = shape
+            st.image(camera_photo, caption="Captured Image")
+        except Exception as e:
+            st.error(f"Error processing camera image: {e}")
+            msg_flat = None
 
 elif input_type == "Draw Signal":
     st.subheader("Draw Your Custom Waveform")
     st.info("Draw a line, then click 'Process Drawing' in the sidebar.")
-    canvas_result = st_canvas(
-        stroke_width=5, stroke_color="#000000", background_color="#EEEEEE",
-        height=200, width=700, drawing_mode="freedraw", key="canvas",
-    )
+    canvas_result = st_canvas(stroke_width=5, stroke_color="#000000", background_color="#EEEEEE", height=200, width=700, drawing_mode="freedraw", key="canvas")
     if process_drawing_button:
-        if canvas_result.image_data is not None and np.sum(canvas_result.image_data) > 0:
-            gray_image = 255 - canvas_result.image_data.astype(np.float32)[:, :, 0]
-            height, width = gray_image.shape
-            raw_signal = np.array([np.sum(gray_image[:, x] * np.arange(height)) / np.sum(gray_image[:, x]) if np.sum(gray_image[:, x]) > 0 else height / 2.0 for x in range(width)])
-            raw_signal = height - raw_signal
-            
-            centered_signal = raw_signal - np.mean(raw_signal)
-            max_abs = np.max(np.abs(centered_signal))
-            if max_abs > 0:
-                msg_flat = centered_signal / max_abs
-            else:
-                msg_flat = centered_signal
-            
-            st.session_state.drawn_signal = msg_flat
-            st.success("Drawing processed!")
+        try:
+            if canvas_result.image_data is not None and np.sum(canvas_result.image_data) > 0:
+                gray_image = 255 - canvas_result.image_data.astype(np.float32)[:, :, 0]
+                height, width = gray_image.shape
+                raw_signal = np.array([np.sum(gray_image[:, x] * np.arange(height)) / np.sum(gray_image[:, x]) if np.sum(gray_image[:, x]) > 0 else height / 2.0 for x in range(width)])
+                raw_signal = height - raw_signal
+                centered_signal = raw_signal - np.mean(raw_signal)
+                max_abs = np.max(np.abs(centered_signal))
+                if max_abs > 0: msg_flat = centered_signal / max_abs
+                else: msg_flat = centered_signal
+                st.session_state.drawn_signal = msg_flat
+                st.success("Drawing processed!")
+        except Exception as e:
+            st.error(f"Error processing drawing: {e}")
+            st.session_state.drawn_signal = None
     if 'drawn_signal' in st.session_state:
         msg_flat = st.session_state.drawn_signal
 
@@ -264,16 +265,23 @@ elif input_type == "Equation":
 
 elif uploaded_file is not None:
     if input_type == "Audio":
-        msg_flat = load_audio(uploaded_file, fs)
-        st.subheader("Original Audio")
-        st.audio(array_to_audio_bytes(msg_flat, fs))
+        try:
+            msg_flat = load_audio(uploaded_file, fs)
+            st.subheader("Original Audio")
+            st.audio(array_to_audio_bytes(msg_flat, fs))
+        except Exception as e:
+            st.error(f"Error processing audio file: {e}")
+            msg_flat = None
     elif input_type == "Image":
-        msg, shape = load_image(uploaded_file)
-        msg_flat = msg.flatten()
-        original_image_shape = shape
-        st.subheader("Original Image")
-        # --- THIS IS THE CORRECTED LINE ---
-        st.image(recover_image(msg_flat, shape), width='stretch')
+        try:
+            msg, shape = load_image(uploaded_file)
+            msg_flat = msg.flatten()
+            original_image_shape = shape
+            st.subheader("Original Image")
+            st.image(recover_image(msg_flat, shape), width='stretch')
+        except Exception as e:
+            st.error(f"Error processing image file: {e}")
+            msg_flat = None
 
 if msg_flat is not None:
     st.subheader("Original Message Signal `m(t)`")
@@ -281,12 +289,9 @@ if msg_flat is not None:
     ax_msg.plot(time_axis(len(msg_flat), fs), msg_flat)
     ax_msg.set_title("Message Signal (Time Domain)"); ax_msg.set_xlabel("Time (s)"); ax_msg.grid(True)
     st.pyplot(fig_msg)
-    
     msg_for_metrics = msg_flat.copy()
-
     if 'AM' in modulations and np.any(am_depth * msg_for_metrics < -1):
         st.warning("️**AM Overmodulation Alert:** The selected AM modulation depth is causing the term `(1 + depth * m(t))` to become negative. This will lead to phase reversal and distortion in the demodulated signal.")
-
     if input_type in ["Image", "Live Camera"]:
         bandwidth_hz = estimate_bandwidth(msg_flat, fs)
         suggested_fc = int(np.ceil(bandwidth_hz * 5 / 1000) * 1000) if bandwidth_hz > 0 else 5000
@@ -299,40 +304,35 @@ if msg_flat is not None and modulations:
     mod_tabs = st.tabs(modulations)
     for i, mod in enumerate(modulations):
         with mod_tabs[i]:
-            phase_offset_deg = phase_offsets.get(mod, 0)
-            
-            if mod == 'AM': tx = am_modulate(msg_flat, carrier, fs, depth=am_depth)
-            elif mod == 'DSB-SC': tx = dsb_sc_modulate(msg_flat, carrier, fs)
-            elif mod == 'SSB': tx = ssb_modulate(msg_flat, carrier, fs, side=ssb_side)
-            elif mod == 'FM': tx = fm_modulate(msg_flat, carrier, fs)
-
-            tx_noisy = awgn(tx, snr_db)
-            
-            if mod == 'AM': rec = envelope_detect(tx_noisy)
-            elif mod in ['DSB-SC', 'SSB']: rec = coherent_demodulate(tx_noisy, carrier, fs, phase_offset_deg)
-            elif mod == 'FM': rec = fm_demodulate(tx_noisy, fs)
-
-            if np.max(np.abs(rec)) > 0: rec /= np.max(np.abs(rec))
-
-            st.subheader("Signal Plots")
-            fig, axs = plt.subplots(2, 2, figsize=(14, 8))
-            axs[0, 0].plot(time_axis(len(tx_noisy), fs), tx_noisy, color='red'); axs[0, 0].set_title("Noisy Modulated Signal (Time)")
-            axs[0, 1].plot(time_axis(len(rec), fs), rec, color='green'); axs[0, 1].set_title("Recovered Signal (Time)")
-            plot_spectrum(axs[1, 0], tx_noisy, fs, "Modulated Spectrum", carrier_freq=carrier)
-            plot_spectrum(axs[1, 1], rec, fs, "Recovered Spectrum")
-            plt.tight_layout(); st.pyplot(fig)
-
-            st.subheader("Output & Quality Metrics")
-            accuracy, mse, psnr, ssim_val = calculate_signal_metrics(msg_for_metrics, rec, original_image_shape)
-            
-            cols = st.columns(4)
-            cols[0].metric("Accuracy", f"{accuracy:.2f}%")
-            cols[1].metric("PSNR (dB)", f"{psnr:.2f}")
-            cols[2].metric("MSE", f"{mse:.4f}", delta_color="inverse")
-            if ssim_val is not None: cols[3].metric("SSIM", f"{ssim_val:.4f}")
-            
-            if input_type == "Audio": st.audio(array_to_audio_bytes(rec, fs))
-            elif input_type in ["Image", "Live Camera"] and original_image_shape: st.image(recover_image(rec, original_image_shape), caption=f"{mod} Recovered Image")
-
+            try:
+                phase_offset_deg = phase_offsets.get(mod, 0)
+                if mod == 'AM': tx = am_modulate(msg_flat, carrier, fs, depth=am_depth)
+                elif mod == 'DSB-SC': tx = dsb_sc_modulate(msg_flat, carrier, fs)
+                elif mod == 'SSB': tx = ssb_modulate(msg_flat, carrier, fs, side=ssb_side)
+                elif mod == 'FM': tx = fm_modulate(msg_flat, carrier, fs)
+                tx_noisy = awgn(tx, snr_db)
+                if mod == 'AM': rec = envelope_detect(tx_noisy)
+                elif mod in ['DSB-SC', 'SSB']: rec = coherent_demodulate(tx_noisy, carrier, fs, phase_offset_deg)
+                elif mod == 'FM': rec = fm_demodulate(tx_noisy, fs)
+                if np.max(np.abs(rec)) > 0: rec /= np.max(np.abs(rec))
+                st.subheader("Signal Plots")
+                fig, axs = plt.subplots(2, 2, figsize=(14, 8))
+                axs[0, 0].plot(time_axis(len(tx_noisy), fs), tx_noisy, color='red'); axs[0, 0].set_title("Noisy Modulated Signal (Time)")
+                axs[0, 1].plot(time_axis(len(rec), fs), rec, color='green'); axs[0, 1].set_title("Recovered Signal (Time)")
+                plot_spectrum(axs[1, 0], tx_noisy, fs, "Modulated Spectrum", carrier_freq=carrier)
+                plot_spectrum(axs[1, 1], rec, fs, "Recovered Spectrum")
+                plt.tight_layout(); st.pyplot(fig)
+                st.subheader("Output & Quality Metrics")
+                accuracy, mse, psnr, ssim_val = calculate_signal_metrics(msg_for_metrics, rec, original_image_shape)
+                cols = st.columns(4)
+                cols[0].metric("Accuracy", f"{accuracy:.2f}%")
+                cols[1].metric("PSNR (dB)", f"{psnr:.2f}")
+                cols[2].metric("MSE", f"{mse:.4f}", delta_color="inverse")
+                if ssim_val is not None: cols[3].metric("SSIM", f"{ssim_val:.4f}")
+                if input_type == "Audio": st.audio(array_to_audio_bytes(rec, fs))
+                elif input_type in ["Image", "Live Camera"] and original_image_shape: st.image(recover_image(rec, original_image_shape), caption=f"{mod} Recovered Image")
+            except Exception as e:
+                st.error(f"An error occurred during the {mod} simulation.")
+                st.exception(e)
 else:
     st.info("**Welcome!** Please select an input type and simulation parameters from the sidebar to begin.")
