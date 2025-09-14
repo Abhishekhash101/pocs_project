@@ -217,15 +217,13 @@ elif input_type == "Draw Signal":
             raw_signal = np.array([np.sum(gray_image[:, x] * np.arange(height)) / np.sum(gray_image[:, x]) if np.sum(gray_image[:, x]) > 0 else height / 2.0 for x in range(width)])
             raw_signal = height - raw_signal
             
-            # --- CORRECTED CODE BLOCK ---
             centered_signal = raw_signal - np.mean(raw_signal)
             max_abs = np.max(np.abs(centered_signal))
             if max_abs > 0:
                 msg_flat = centered_signal / max_abs
             else:
-                msg_flat = centered_signal # Handles flat line case (already all zeros)
-            # --- END OF CORRECTION ---
-
+                msg_flat = centered_signal
+            
             st.session_state.drawn_signal = msg_flat
             st.success("Drawing processed!")
     if 'drawn_signal' in st.session_state:
@@ -263,7 +261,8 @@ elif uploaded_file is not None:
         msg_flat = msg.flatten()
         original_image_shape = shape
         st.subheader("Original Image")
-        st.image(recover_image(msg_flat, shape), use_column_width=True)
+        # --- THIS IS THE CORRECTED LINE ---
+        st.image(recover_image(msg_flat, shape), use_container_width=True)
 
 if msg_flat is not None:
     st.subheader("Original Message Signal `m(t)`")
@@ -275,7 +274,7 @@ if msg_flat is not None:
     msg_for_metrics = msg_flat.copy()
 
     if 'AM' in modulations and np.any(am_depth * msg_for_metrics < -1):
-        st.warning("**AM Overmodulation Alert:** The selected AM modulation depth is causing the term `(1 + depth * m(t))` to become negative. This will lead to phase reversal and distortion in the demodulated signal.")
+        st.warning("️**AM Overmodulation Alert:** The selected AM modulation depth is causing the term `(1 + depth * m(t))` to become negative. This will lead to phase reversal and distortion in the demodulated signal.")
 
     if input_type in ["Image", "Live Camera"]:
         bandwidth_hz = estimate_bandwidth(msg_flat, fs)
@@ -326,4 +325,3 @@ if msg_flat is not None and modulations:
 
 else:
     st.info("**Welcome!** Please select an input type and simulation parameters from the sidebar to begin.")
-
