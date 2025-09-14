@@ -2,10 +2,8 @@ matplotlib
 numexpr
 numpy
 Pillow
-pydub
 scikit-image
 scipy
 SoundFile
 streamlit
 streamlit-drawable-canvas
-streamlit-mic-recorder  
