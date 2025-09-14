@@ -132,11 +132,11 @@ def fm_modulate(msg, fc, fs, kf=5.0):
 
 # ---------------- Streamlit UI ----------------
 
-st.title("Real-Time Interactive Modulation Simulator")
+st.title("📡 Real-Time Interactive Modulation Simulator")
 
 # --- UI Sidebar for ALL controls ---
 with st.sidebar:
-    st.header("Controls")
+    st.header("⚙️ Controls")
     
     input_type = st.radio("1. Select Input Type", ["Audio", "Image", "Draw Signal", "Live Camera", "Equation"])
     uploaded_file = st.file_uploader("Upload File (if needed)", type=["wav", "mp3", "jpg", "png"])
@@ -162,15 +162,15 @@ with st.sidebar:
             duration_ff = st.number_input("Signal Duration (s)", 0.1, 10.0, 1.0, 0.1, key="freeform_duration")
             generate_freeform_button = st.button("Generate from Equation", key="generate_freeform_sidebar")
 
-    st.header("Simulation Parameters")
+    st.header("🔬 Simulation Parameters")
     modulations = st.multiselect("2. Select Modulations", ['AM', 'DSB-SC', 'SSB', 'FM'])
     carrier = st.number_input("Carrier Frequency (Hz)", value=5000, min_value=1)
     fs = st.number_input("Sampling Frequency (Hz)", value=48000, min_value=1)
 
-    st.header("Channel Effects")
+    st.header("🛰️ Channel Effects")
     snr_db = st.slider("Signal-to-Noise Ratio (SNR in dB)", -10, 40, 20)
     
-    st.header("Modulation & Demodulation Settings")
+    st.header("🔧 Modulation & Demodulation Settings")
     
     am_depth = 0.7
     if 'AM' in modulations:
@@ -190,14 +190,14 @@ with st.sidebar:
         st.caption("Coherent demodulator settings will appear here if DSB-SC or SSB are selected.")
 
     st.divider()
-    st.subheader("***App Creators***")
+    st.subheader("App Creators")
     st.markdown("""
-    Abhishek Kumar -	24BIT0104
-Khushvendra Singh -	24BIT0093 ,
-Aditya Raj - 24BIT0087 , 
- Madhur Deshmukh -	24BIT0113 , 
-Manav mishra -	24BIT0100 ,
-Sarthak Agarwal -	24BIT0116
+    - Abhishek Kumar (24BIT0104)
+    - Khushvendra Singh (24BIT0093)
+    - Aditya Raj (24BIT0087)
+    - Madhur Deshmukh (24BIT0113)
+    - Manav mishra (24BIT0100)
+    - Sarthak Agarwal (24BIT0116)
     """)
 
 # --- Main Panel for Display and Processing ---
@@ -206,7 +206,7 @@ original_image_shape = None
 msg_for_metrics = None
 
 if input_type == "Live Camera":
-    st.subheader("Capture from Webcam")
+    st.subheader("📸 Capture from Webcam")
     camera_photo = st.camera_input("Take a picture")
     if camera_photo:
         try:
@@ -219,7 +219,7 @@ if input_type == "Live Camera":
             msg_flat = None
 
 elif input_type == "Draw Signal":
-    st.subheader("Draw Your Custom Waveform")
+    st.subheader("✍️ Draw Your Custom Waveform")
     st.info("Draw a line, then click 'Process Drawing' in the sidebar.")
     canvas_result = st_canvas(stroke_width=5, stroke_color="#000000", background_color="#EEEEEE", height=200, width=700, drawing_mode="freedraw", key="canvas")
     if process_drawing_button:
@@ -242,7 +242,7 @@ elif input_type == "Draw Signal":
         msg_flat = st.session_state.drawn_signal
 
 elif input_type == "Equation":
-    st.subheader("Signal Defined by Equation")
+    st.subheader("🧪 Signal Defined by Equation")
     if generate_sine_button:
         N = int(duration_sine * fs); t = np.arange(N) / fs
         msg_flat = amplitude * np.sin(2 * np.pi * frequency * t + np.deg2rad(phase))
@@ -278,7 +278,7 @@ elif uploaded_file is not None:
             msg_flat = msg.flatten()
             original_image_shape = shape
             st.subheader("Original Image")
-            st.image(recover_image(msg_flat, shape), width='stretch')
+            st.image(recover_image(msg_flat, shape), use_container_width=True)
         except Exception as e:
             st.error(f"Error processing image file: {e}")
             msg_flat = None
@@ -291,12 +291,12 @@ if msg_flat is not None:
     st.pyplot(fig_msg)
     msg_for_metrics = msg_flat.copy()
     if 'AM' in modulations and np.any(am_depth * msg_for_metrics < -1):
-        st.warning("️**AM Overmodulation Alert:** The selected AM modulation depth is causing the term `(1 + depth * m(t))` to become negative. This will lead to phase reversal and distortion in the demodulated signal.")
+        st.warning("️⚠️ **AM Overmodulation Alert:** The selected AM modulation depth is causing the term `(1 + depth * m(t))` to become negative. This will lead to phase reversal and distortion in the demodulated signal.")
     if input_type in ["Image", "Live Camera"]:
         bandwidth_hz = estimate_bandwidth(msg_flat, fs)
         suggested_fc = int(np.ceil(bandwidth_hz * 5 / 1000) * 1000) if bandwidth_hz > 0 else 5000
         suggested_fs = int(np.ceil(2.5 * (suggested_fc + bandwidth_hz) / 1000) * 1000) if suggested_fc > 0 else 48000
-        st.info(f"**Suggestion for Image:** Est. Bandwidth: `{bandwidth_hz:,.0f} Hz`. Try $f_c \approx$ `{suggested_fc:,} Hz` and $f_s >$ `{suggested_fs:,} Hz`.")
+        st.info(f"💡 **Suggestion for Image:** Est. Bandwidth: `{bandwidth_hz:,.0f} Hz`. Try $f_c \approx$ `{suggested_fc:,} Hz` and $f_s >$ `{suggested_fs:,} Hz`.")
 
 # --- Main Processing & Display Loop ---
 if msg_flat is not None and modulations:
@@ -325,7 +325,7 @@ if msg_flat is not None and modulations:
                 st.subheader("Output & Quality Metrics")
                 accuracy, mse, psnr, ssim_val = calculate_signal_metrics(msg_for_metrics, rec, original_image_shape)
                 cols = st.columns(4)
-                cols[0].metric("Accuracy", f"{accuracy:.2f}%")
+                cols[0].metric("🎯 Accuracy", f"{accuracy:.2f}%")
                 cols[1].metric("PSNR (dB)", f"{psnr:.2f}")
                 cols[2].metric("MSE", f"{mse:.4f}", delta_color="inverse")
                 if ssim_val is not None: cols[3].metric("SSIM", f"{ssim_val:.4f}")
@@ -335,4 +335,4 @@ if msg_flat is not None and modulations:
                 st.error(f"An error occurred during the {mod} simulation.")
                 st.exception(e)
 else:
-    st.info("**Welcome!** Please select an input type and simulation parameters from the sidebar to begin.")
+    st.info("⬅️ **Welcome!** Please select an input type and simulation parameters from the sidebar to begin.")
