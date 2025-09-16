@@ -130,6 +130,50 @@ def fm_modulate(msg, fc, fs, kf=5.0):
     t = time_axis(len(msg), fs); dt = 1 / fs; integral = np.cumsum(msg) * dt
     return np.cos(2 * np.pi * fc * t + 2 * np.pi * kf * integral)
 
+def vsb_modulate(msg, fc, fs, beta=500):
+    """
+    Generates a Vestigial Sideband (VSB) modulated signal.
+    - msg: The message signal.
+    - fc: Carrier frequency.
+    - fs: Sampling frequency.
+    - beta: The width of the vestigial sideband in Hz.
+    """
+    N = len(msg)
+    t = time_axis(N, fs)
+    
+    # 1. Generate the DSB-SC signal first
+    dsb_signal = msg * np.cos(2 * np.pi * fc * t)
+    
+    # 2. Go to the frequency domain to create the vestigial filter
+    dsb_fft = np.fft.fft(dsb_signal)
+    xf = np.fft.fftfreq(N, 1 / fs)
+    
+    # 3. Create the vestigial shaping filter (H_v(f))
+    # This filter has odd symmetry around the carrier frequency fc.
+    # We will pass the Upper Sideband (USB) and a vestige of the LSB.
+    hv = np.zeros(N)
+    
+    # Passband for USB
+    hv[np.abs(xf) > fc + beta] = 1.0
+    
+    # Stopband for LSB
+    hv[np.abs(xf) < fc - beta] = 0.0
+    
+    # Transition band (the vestige) with linear rolloff
+    # Positive frequencies
+    pos_mask = (xf >= fc - beta) & (xf <= fc + beta)
+    hv[pos_mask] = 0.5 + 0.5 * (xf[pos_mask] - fc) / beta
+    
+    # Negative frequencies (mirrored)
+    neg_mask = (xf >= -fc - beta) & (xf <= -fc + beta)
+    hv[neg_mask] = 0.5 - 0.5 * (xf[neg_mask] + fc) / beta
+    
+    # 4. Apply the filter and return to the time domain
+    vsb_fft = dsb_fft * hv
+    vsb_signal = np.real(np.fft.ifft(vsb_fft))
+    
+    return vsb_signal
+
 # ---------------- Streamlit UI ----------------
 
 st.title("📡 Real-Time Interactive Modulation Simulator")
@@ -163,7 +207,7 @@ with st.sidebar:
             generate_freeform_button = st.button("Generate from Equation", key="generate_freeform_sidebar")
 
     st.header("🔬 Simulation Parameters")
-    modulations = st.multiselect("2. Select Modulations", ['AM', 'DSB-SC', 'SSB', 'FM'])
+    modulations = st.multiselect("2. Select Modulations", ['AM', 'DSB-SC', 'SSB', 'VSB', 'FM'])
     carrier = st.number_input("Carrier Frequency (Hz)", value=5000, min_value=1)
     fs = st.number_input("Sampling Frequency (Hz)", value=48000, min_value=1)
 
@@ -176,18 +220,22 @@ with st.sidebar:
     if 'AM' in modulations:
         am_depth = st.slider("AM Modulation Depth", 0.1, 2.0, 0.7, 0.05, help="Values > 1.0 will cause overmodulation.")
 
+    vsb_beta = 500
+    if 'VSB' in modulations:
+        vsb_beta = st.number_input("VSB Vestige Width (Hz)", value=500, min_value=1, step=50, help="Controls the width of the remaining sideband portion.")
+
     ssb_side = 'usb'
     if 'SSB' in modulations:
         ssb_side_choice = st.radio("SSB Sideband", ('USB', 'LSB'), key='ssb_side')
         ssb_side = ssb_side_choice.lower()
 
     phase_offsets = {}
-    coherent_mods = [m for m in modulations if m in ['DSB-SC', 'SSB']]
+    coherent_mods = [m for m in modulations if m in ['DSB-SC', 'SSB', 'VSB']]
     if coherent_mods:
         for mod in coherent_mods:
             phase_offsets[mod] = st.slider(f"Coherent Phase Offset for {mod} (°)", -180, 180, 0, key=f"phase_{mod}")
     else:
-        st.caption("Coherent demodulator settings will appear here if DSB-SC or SSB are selected.")
+        st.caption("Coherent demodulator settings will appear here if DSB-SC, SSB, or VSB are selected.")
 
     st.divider()
     st.subheader("App Creators")
@@ -306,15 +354,23 @@ if msg_flat is not None and modulations:
         with mod_tabs[i]:
             try:
                 phase_offset_deg = phase_offsets.get(mod, 0)
+                
+                # Modulation
                 if mod == 'AM': tx = am_modulate(msg_flat, carrier, fs, depth=am_depth)
                 elif mod == 'DSB-SC': tx = dsb_sc_modulate(msg_flat, carrier, fs)
                 elif mod == 'SSB': tx = ssb_modulate(msg_flat, carrier, fs, side=ssb_side)
+                elif mod == 'VSB': tx = vsb_modulate(msg_flat, carrier, fs, beta=vsb_beta)
                 elif mod == 'FM': tx = fm_modulate(msg_flat, carrier, fs)
+                
                 tx_noisy = awgn(tx, snr_db)
+                
+                # Demodulation
                 if mod == 'AM': rec = envelope_detect(tx_noisy)
-                elif mod in ['DSB-SC', 'SSB']: rec = coherent_demodulate(tx_noisy, carrier, fs, phase_offset_deg)
+                elif mod in ['DSB-SC', 'SSB', 'VSB']: rec = coherent_demodulate(tx_noisy, carrier, fs, phase_offset_deg)
                 elif mod == 'FM': rec = fm_demodulate(tx_noisy, fs)
+                
                 if np.max(np.abs(rec)) > 0: rec /= np.max(np.abs(rec))
+                
                 st.subheader("Signal Plots")
                 fig, axs = plt.subplots(2, 2, figsize=(14, 8))
                 axs[0, 0].plot(time_axis(len(tx_noisy), fs), tx_noisy, color='red'); axs[0, 0].set_title("Noisy Modulated Signal (Time)")
@@ -322,6 +378,7 @@ if msg_flat is not None and modulations:
                 plot_spectrum(axs[1, 0], tx_noisy, fs, "Modulated Spectrum", carrier_freq=carrier)
                 plot_spectrum(axs[1, 1], rec, fs, "Recovered Spectrum")
                 plt.tight_layout(); st.pyplot(fig)
+                
                 st.subheader("Output & Quality Metrics")
                 accuracy, mse, psnr, ssim_val = calculate_signal_metrics(msg_for_metrics, rec, original_image_shape)
                 cols = st.columns(4)
@@ -329,8 +386,10 @@ if msg_flat is not None and modulations:
                 cols[1].metric("PSNR (dB)", f"{psnr:.2f}")
                 cols[2].metric("MSE", f"{mse:.4f}", delta_color="inverse")
                 if ssim_val is not None: cols[3].metric("SSIM", f"{ssim_val:.4f}")
+                
                 if input_type == "Audio": st.audio(array_to_audio_bytes(rec, fs))
                 elif input_type in ["Image", "Live Camera"] and original_image_shape: st.image(recover_image(rec, original_image_shape), caption=f"{mod} Recovered Image")
+            
             except Exception as e:
                 st.error(f"An error occurred during the {mod} simulation.")
                 st.exception(e)
